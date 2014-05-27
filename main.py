@@ -25,6 +25,8 @@ DEFAULT_VIDEO = 'file:///home/helio/Videos/dramatic.mp4'
 
 DEFAULT_STORE = 'videolist'
 
+ZENCODER_KEY = '93d453aa7de28c6645a88b5df3dd59a1'
+
 #####################################################
 # Classes and definitions for the ndb store
 ######################################################
@@ -54,7 +56,6 @@ class MainPage(webapp2.RequestHandler):
           # END TESTING
           video_url = self.request.get('url', DEFAULT_VIDEO).strip()
           video_name = self.request.get('name', DEFAULT_VIDEO).strip()
-          print video_name
           if (video_url == DEFAULT_VIDEO):
                # If the default video isn't yet on the Store,
                # than store it
@@ -89,19 +90,43 @@ class MainPage(webapp2.RequestHandler):
                # Convert new video to a suitable format
                zenc_input = {'input' : v.url, 'output' : {'url': 's3://sambatest/'+v.name, 'public': 'true'} } 
                enc_input = json.dumps(zenc_input)
-               header = {'Zencoder-Api-Key': '93d453aa7de28c6645a88b5df3dd59a1', 'Content-Type': 'application/json'}
+               header = {'Zencoder-Api-Key': ZENCODER_KEY, 'Content-Type': 'application/json'}
                req = urllib2.Request('https://app.zencoder.com/api/v2/jobs', enc_input, header)
                try:
                     f = urllib2.urlopen(req)
                except urllib2.HTTPError as e:
                     print e.code
                     print e.read()
-               print f
-               # If everything went ok, add the new video to the store
-               v.put()
+               # Testing response from Zencoder
+               response = json.loads(f.read())
+               job_id = response['id']
+               if (not response['test']):
+                    # Job denied by Zencoder
+                    #TODO Get error codes instead of those parameters
+                    query_params = {'name': v.name , 'url': v.url }
+                    self.redirect('/error?' + urllib.urlencode(query_params))
+               else:
+                    # TODO Wait and check if the encoding is ready before
+                    # loading page
+                    req = urllib2.Request('https://app.zencoder.com/api/v2/jobs/'+job_id+'.json?api_key='+ZENCODER_KEY)
+                    f = urllib2.urlopen(newreq)
+                    status = json.loads(f.read())
+                    # Possible states are: pending, waiting, processing, 
+                    # finished, failed, and cancelled
+                    if (status['job']['state'] == 'finished'):
+                         # Everything went ok, add info to the store
+                         v.put()
           # Redirect to the "/" get path to open the desired file
           query_params = {'name': v.name , 'url': v.url }
           self.redirect('/?' + urllib.urlencode(query_params))
+
+#####################################################
+# Error handler
+######################################################
+
+class ErrorPage(webapp2.RequestHandler):
+
+     def get(self):
 
 #####################################################
 # Request handler
@@ -110,4 +135,5 @@ class MainPage(webapp2.RequestHandler):
 application = webapp2.WSGIApplication([
      ('/', MainPage),
      ('/add', MainPage),
+     ('/error', ErrorPage),
 ], debug=True)

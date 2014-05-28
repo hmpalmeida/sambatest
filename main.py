@@ -88,15 +88,21 @@ class MainPage(webapp2.RequestHandler):
           video_query = Video.query(Video.url == v.url)
           if (video_query.count() == 0):
                # Convert new video to a suitable format
-               zenc_input = {'input' : v.url, 'output' : {'url': 's3://sambatest/'+v.name, 'public': 'true'} } 
+               zenc_input = {'input' : v.url, \
+                    'output' : {'url': 's3://sambatest/'+v.name, \
+                    'public': 'true'} } 
                enc_input = json.dumps(zenc_input)
-               header = {'Zencoder-Api-Key': ZENCODER_KEY, 'Content-Type': 'application/json'}
-               req = urllib2.Request('https://app.zencoder.com/api/v2/jobs', enc_input, header)
+               header = {'Zencoder-Api-Key': ZENCODER_KEY, \
+                    'Content-Type': 'application/json'}
+               req = urllib2.Request('https://app.zencoder.com/api/v2/jobs', \
+                    enc_input, header)
                try:
                     f = urllib2.urlopen(req)
                except urllib2.HTTPError as e:
-                    print e.code
-                    print e.read()
+                    err = json.loads(e.read())
+                    query_params = {'error': e.code , \
+                         'message': err['errors'][0]}
+                    self.redirect('/error?' + urllib.urlencode(query_params))
                # Testing response from Zencoder
                response = json.loads(f.read())
                job_id = response['id']
@@ -109,7 +115,7 @@ class MainPage(webapp2.RequestHandler):
                     # TODO Wait and check if the encoding is ready before
                     # loading page
                     req = urllib2.Request('https://app.zencoder.com/api/v2/jobs/'+job_id+'.json?api_key='+ZENCODER_KEY)
-                    f = urllib2.urlopen(newreq)
+                    f = urllib2.urlopen(req)
                     status = json.loads(f.read())
                     # Possible states are: pending, waiting, processing, 
                     # finished, failed, and cancelled
@@ -127,6 +133,7 @@ class MainPage(webapp2.RequestHandler):
 class ErrorPage(webapp2.RequestHandler):
 
      def get(self):
+          print 'Future Error Page!'
 
 #####################################################
 # Request handler

@@ -3,6 +3,7 @@ import urllib
 import urllib2
 import os
 import json
+import time
 
 from google.appengine.ext import ndb
 
@@ -56,9 +57,16 @@ def create_zencoder_job_request(input_url, output_file):
           enc_input, header)
      return req
           
-def create_zencoder_status_request(job_id):
-     req = urllib2.Request('https://app.zencoder.com/api/v2/jobs/'+str(job_id)+'.json?api_key='+ZENCODER_KEY)
-
+def get_zencoder_job_status(job_id):
+     request = urllib2.Request('https://app.zencoder.com/api/v2/jobs/'+job_id+'.json?api_key='+ZENCODER_KEY)
+     try:
+          f = urllib2.urlopen(request)
+     except urllib2.HTTPError as e:
+          return 'HTTP Error #'+e.code
+     status = json.loads(f.read())
+     # Possible states are: pending, waiting, processing, 
+     # finished, failed, and cancelled
+     return status['job']['state']
 
 #####################################################
 # Main class that will work on all requests
@@ -67,13 +75,10 @@ def create_zencoder_status_request(job_id):
 class MainPage(webapp2.RequestHandler):
 
      def get(self):
-          # TESTING ONLY
-          #queries = Video.query()
-          #for q in queries:
-          #     print q
-          # END TESTING
           video_url = self.request.get('url', DEFAULT_VIDEO).strip()
           video_name = self.request.get('name', DEFAULT_VIDEO).strip()
+          job_id = self.request.get('jobid', '-1').strip()
+          status = '????'
           if (video_url == DEFAULT_VIDEO):
                # If the default video isn't yet on the Store,
                # than store it
@@ -89,6 +94,10 @@ class MainPage(webapp2.RequestHandler):
           template_values = {
                'file': SERVER_NAME+video_name,
           }
+          # In case an encoding job is running...
+          if (job_id != '-1'):
+               status = get_zencoder_job_status(job_id)
+               template_values['status'] = status
           # Call the template
           template = JINJA_ENVIRONMENT.get_template('index.html')
           self.response.write(template.render(template_values))
@@ -116,24 +125,13 @@ class MainPage(webapp2.RequestHandler):
                     query_params = {'error': e.code , \
                          'message': err['errors'][0]}
                     self.redirect('/error?' + urllib.urlencode(query_params))
-               # Testing response from Zencoder
+               # Request submitted, now control job status
                response = json.loads(f.read())
-               if (not response['test']):
-                    # Job denied by Zencoder
-                    #TODO Get error codes instead of those parameters
-                    query_params = {'name': v.name , 'url': v.url }
-                    self.redirect('/error?' + urllib.urlencode(query_params))
-               else:
-                    # TODO Wait and check if the encoding is ready before
-                    # loading page
-                    req = create_zencoder_status_request(response['id'])
-                    f = urllib2.urlopen(req)
-                    status = json.loads(f.read())
-                    # Possible states are: pending, waiting, processing, 
-                    # finished, failed, and cancelled
-                    if (status['job']['state'] == 'finished'):
-                         # Everything went ok, add info to the store
-                         v.put()
+               query_params = {'name': v.name , 'url': v.url,\
+                     'jobid': str(response['id']) }
+               self.redirect('/?' + urllib.urlencode(query_params))
+               return
+          #else:
           # Redirect to the "/" get path to open the desired file
           query_params = {'name': v.name , 'url': v.url }
           self.redirect('/?' + urllib.urlencode(query_params))
@@ -146,6 +144,7 @@ class ErrorPage(webapp2.RequestHandler):
 
      def get(self):
           print 'Future Error Page!'
+
 
 #####################################################
 # Request handler

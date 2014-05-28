@@ -10,6 +10,13 @@
       <div><input name="video_url"></div>
       <div><input type="submit" value="Play Video"></div>
     </form>
+    {% if status is defined %}
+          <p><b>Status of the encoding process:</b> {{ status }}</p>
+          <p>If status is <i>Finished</i> and the video did not load,
+               please reload this page. If status is <i>pending</i>, 
+               <i>waiting</i> or <i>processing</i>, reloading will also
+               update the status.</p>
+    {% endif%}
 
   </body>
 </html>

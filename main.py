@@ -47,26 +47,39 @@ class Video(ndb.Model):
 #####################################################
 
 def create_zencoder_job_request(input_url, output_file):
-     zenc_input = {'input' : input_url, \
-          'output' : {'url': 's3://sambatest/'+output_file, \
+     zenc_input = {'input' : input_url, 
+          'output' : {'url': 's3://sambatest/'+output_file, 
           'public': 'true'} } 
      enc_input = json.dumps(zenc_input)
-     header = {'Zencoder-Api-Key': ZENCODER_KEY, \
+     header = {'Zencoder-Api-Key': ZENCODER_KEY, 
           'Content-Type': 'application/json'}
-     req = urllib2.Request('https://app.zencoder.com/api/v2/jobs', \
+     req = urllib2.Request('https://app.zencoder.com/api/v2/jobs', 
           enc_input, header)
      return req
+
+################
           
 def get_zencoder_job_status(job_id):
      request = urllib2.Request('https://app.zencoder.com/api/v2/jobs/'+job_id+'.json?api_key='+ZENCODER_KEY)
      try:
           f = urllib2.urlopen(request)
      except urllib2.HTTPError as e:
-          return 'HTTP Error #'+e.code
+          # Raise an error
+          query_params = {'error': e.code , 
+               'message': e}
+          self.redirect('/error?' + urllib.urlencode(query_params))
+          return
      status = json.loads(f.read())
      # Possible states are: pending, waiting, processing, 
      # finished, failed, and cancelled
-     return status['job']['state']
+     if (status['job']['state'] != 'failed' and 
+          status['job']['state'] != 'cancelled'):
+          return status['job']['state']
+     else:
+          # Raise an error
+          query_params = {'error': status['job']['error_class'] , 
+               'message': status['job']['error_message']}
+          self.redirect('/error?' + urllib.urlencode(query_params))
 
 #####################################################
 # Main class that will work on all requests
@@ -115,23 +128,23 @@ class MainPage(webapp2.RequestHandler):
           v.name = tmp[0]+'.mp4'
           # Check if this file was already processed
           video_query = Video.query(Video.url == v.url)
+          #FIXME this checking is useless at the moment!
           if (video_query.count() >= 0):
                # Convert new video to a suitable format
                req = create_zencoder_job_request(v.url, v.name)
                try:
                     f = urllib2.urlopen(req)
                except urllib2.HTTPError as e:
-                    err = json.loads(e.read())
-                    query_params = {'error': e.code , \
-                         'message': err['errors'][0]}
+                    query_params = {'error': e.code , 
+                         'message': e}
                     self.redirect('/error?' + urllib.urlencode(query_params))
+                    return
                # Request submitted, now control job status
                response = json.loads(f.read())
-               query_params = {'name': v.name , 'url': v.url,\
+               query_params = {'name': v.name , 'url': v.url,
                      'jobid': str(response['id']) }
                self.redirect('/?' + urllib.urlencode(query_params))
                return
-          #else:
           # Redirect to the "/" get path to open the desired file
           query_params = {'name': v.name , 'url': v.url }
           self.redirect('/?' + urllib.urlencode(query_params))
@@ -144,6 +157,16 @@ class ErrorPage(webapp2.RequestHandler):
 
      def get(self):
           print 'Future Error Page!'
+          error_code = self.request.get('error').strip()
+          error_message = self.request.get('message').strip()
+          template_values = {
+               'error': error_code,
+               'message': error_message
+          }
+          # Call the template
+          template = JINJA_ENVIRONMENT.get_template('error.html')
+          self.response.write(template.render(template_values))
+          
 
 
 #####################################################

@@ -41,6 +41,24 @@ class Video(ndb.Model):
      name = ndb.StringProperty(indexed=False)
      date = ndb.DateTimeProperty(auto_now_add=True)
      
+#####################################################
+# Helper functions to create Zencoder requests
+#####################################################
+
+def create_zencoder_job_request(input_url, output_file):
+     zenc_input = {'input' : input_url, \
+          'output' : {'url': 's3://sambatest/'+output_file, \
+          'public': 'true'} } 
+     enc_input = json.dumps(zenc_input)
+     header = {'Zencoder-Api-Key': ZENCODER_KEY, \
+          'Content-Type': 'application/json'}
+     req = urllib2.Request('https://app.zencoder.com/api/v2/jobs', \
+          enc_input, header)
+     return req
+          
+def create_zencoder_status_request(job_id):
+     req = urllib2.Request('https://app.zencoder.com/api/v2/jobs/'+str(job_id)+'.json?api_key='+ZENCODER_KEY)
+
 
 #####################################################
 # Main class that will work on all requests
@@ -74,6 +92,8 @@ class MainPage(webapp2.RequestHandler):
           # Call the template
           template = JINJA_ENVIRONMENT.get_template('index.html')
           self.response.write(template.render(template_values))
+     
+     ###################
 
      def post(self):
           v = Video(parent=video_key())
@@ -86,16 +106,9 @@ class MainPage(webapp2.RequestHandler):
           v.name = tmp[0]+'.mp4'
           # Check if this file was already processed
           video_query = Video.query(Video.url == v.url)
-          if (video_query.count() == 0):
+          if (video_query.count() >= 0):
                # Convert new video to a suitable format
-               zenc_input = {'input' : v.url, \
-                    'output' : {'url': 's3://sambatest/'+v.name, \
-                    'public': 'true'} } 
-               enc_input = json.dumps(zenc_input)
-               header = {'Zencoder-Api-Key': ZENCODER_KEY, \
-                    'Content-Type': 'application/json'}
-               req = urllib2.Request('https://app.zencoder.com/api/v2/jobs', \
-                    enc_input, header)
+               req = create_zencoder_job_request(v.url, v.name)
                try:
                     f = urllib2.urlopen(req)
                except urllib2.HTTPError as e:
@@ -105,7 +118,6 @@ class MainPage(webapp2.RequestHandler):
                     self.redirect('/error?' + urllib.urlencode(query_params))
                # Testing response from Zencoder
                response = json.loads(f.read())
-               job_id = response['id']
                if (not response['test']):
                     # Job denied by Zencoder
                     #TODO Get error codes instead of those parameters
@@ -114,7 +126,7 @@ class MainPage(webapp2.RequestHandler):
                else:
                     # TODO Wait and check if the encoding is ready before
                     # loading page
-                    req = urllib2.Request('https://app.zencoder.com/api/v2/jobs/'+job_id+'.json?api_key='+ZENCODER_KEY)
+                    req = create_zencoder_status_request(response['id'])
                     f = urllib2.urlopen(req)
                     status = json.loads(f.read())
                     # Possible states are: pending, waiting, processing, 

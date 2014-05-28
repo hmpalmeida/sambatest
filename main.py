@@ -59,33 +59,84 @@ def create_zencoder_job_request(input_url, output_file):
 
 ################
           
-def get_zencoder_job_status(job_id):
-     request = urllib2.Request('https://app.zencoder.com/api/v2/jobs/'+job_id+'.json?api_key='+ZENCODER_KEY)
-     try:
-          f = urllib2.urlopen(request)
-     except urllib2.HTTPError as e:
-          # Raise an error
-          query_params = {'error': e.code , 
-               'message': e}
-          self.redirect('/error?' + urllib.urlencode(query_params))
-          return
-     status = json.loads(f.read())
-     # Possible states are: pending, waiting, processing, 
-     # finished, failed, and cancelled
-     if (status['job']['state'] != 'failed' and 
-          status['job']['state'] != 'cancelled'):
-          return status['job']['state']
-     else:
-          # Raise an error
-          query_params = {'error': status['job']['error_class'] , 
-               'message': status['job']['error_message']}
-          self.redirect('/error?' + urllib.urlencode(query_params))
+#def get_zencoder_job_status(job_id):
+#     request = urllib2.Request('https://app.zencoder.com/api/v2/jobs/'+job_id+'.json?api_key='+ZENCODER_KEY)
+#     try:
+#          f = urllib2.urlopen(request)
+#     except urllib2.HTTPError as e:
+#          # Raise an error
+#          query_params = {'error': e.code , 
+#               'message': e}
+#          self.redirect('/error?' + urllib.urlencode(query_params))
+#          return
+#     status = json.loads(f.read())
+#     # Possible states are: pending, waiting, processing, 
+#     # finished, failed, and cancelled
+#     if (status['job']['state'] == 'failed' or 
+#          status['job']['state'] == 'cancelled'):
+#          # Raise an error
+#          query_params = {}
+#          # Get Error Class
+#          if ('error_class' in status['job']):
+#               query_params['error'] = status['job']['error_class']
+#          elif ('error_class' in status['job']['input_media_file']):
+#               query_params['error'] = status['job']['input_media_file']['error_class']
+#          else:
+#               query_params['error'] = '?'
+#          # Get Error Message
+#          if ('error_message' in status['job']):
+#               query_params['message'] = status['job']['error_message']
+#          elif ('error_message' in status['job']['input_media_file']):
+#               query_params['message'] = status['job']['input_media_file']['error_message']
+#          else:
+#               query_params['message'] = '?'
+#          self.redirect('/error?' + urllib.urlencode(query_params))
+#     else:
+#          # Any other case, simply return it
+#          return status['job']['state']
 
 #####################################################
 # Main class that will work on all requests
 ######################################################
 
 class MainPage(webapp2.RequestHandler):
+     
+     def get_zencoder_job_status(self, job_id):
+          request = urllib2.Request('https://app.zencoder.com/api/v2/jobs/'+job_id+'.json?api_key='+ZENCODER_KEY)
+          try:
+               f = urllib2.urlopen(request)
+          except urllib2.HTTPError as e:
+               # Raise an error
+               query_params = {'error': e.code , 
+                    'message': e}
+               self.redirect('/error?' + urllib.urlencode(query_params))
+               return
+          status = json.loads(f.read())
+          # Possible states are: pending, waiting, processing, 
+          # finished, failed, and cancelled
+          if (status['job']['state'] == 'failed' or 
+               status['job']['state'] == 'cancelled'):
+               # Raise an error
+               query_params = {}
+               # Get Error Class
+               if ('error_class' in status['job']):
+                    query_params['error'] = status['job']['error_class']
+               elif ('error_class' in status['job']['input_media_file']):
+                    query_params['error'] = status['job']['input_media_file']['error_class']
+               else:
+                    query_params['error'] = '?'
+               # Get Error Message
+               if ('error_message' in status['job']):
+                    query_params['message'] = status['job']['error_message']
+               elif ('error_message' in status['job']['input_media_file']):
+                    query_params['message'] = status['job']['input_media_file']['error_message']
+               else:
+                    query_params['message'] = '?'
+               self.redirect('/error?' + urllib.urlencode(query_params))
+          else:
+               # Any other case, simply return it
+               return status['job']['state']
+
 
      def get(self):
           video_url = self.request.get('url', DEFAULT_VIDEO).strip()
@@ -109,7 +160,7 @@ class MainPage(webapp2.RequestHandler):
           }
           # In case an encoding job is running...
           if (job_id != '-1'):
-               status = get_zencoder_job_status(job_id)
+               status = self.get_zencoder_job_status(job_id)
                template_values['status'] = status
           # Call the template
           template = JINJA_ENVIRONMENT.get_template('index.html')
